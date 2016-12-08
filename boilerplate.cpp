@@ -178,7 +178,7 @@ bool InitializeGeometry(MyGeometry *geometry)
 			float theta = u*angle;
 			float phi = v*angle;
 			point = vec3(radius*cos(theta*PI/180)*sin(phi*PI/180),radius*sin(theta*PI/180)*sin(phi*PI/180),radius*cos(phi*PI/180));
-			vertices[vertexCount][0] = point.x; vertices[vertexCount][1] = point.y; vertices[vertexCount][2] = point.z;
+			vertices[vertexCount][0] = point.x; vertices[vertexCount][1] = point.z; vertices[vertexCount][2] = point.y;
 			colours[vertexCount][0] = 0.0; colours[vertexCount][1] = 1-1/(float)vertexCount; colours[vertexCount][2] = 1-1/(float)vertexCount-.5;
 			vertexCount++;
 		}
@@ -298,7 +298,7 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 	} else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
 		speed = speed + 0.25;
 	} else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
-		if (speed >= 0.0)
+		if (speed > 0.0)
 			speed = speed - 0.25;
 	}
 }
@@ -369,7 +369,7 @@ int main(int argc, char *argv[])
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	int width = 1024, height = 1024;
+	int width = 1920, height = 1080;
 	window = glfwCreateWindow(width, height, "Solar System", 0, 0);
 	if (!window) {
 		cout << "Program failed to create GLFW window, TERMINATING" << endl;
@@ -408,25 +408,25 @@ int main(int argc, char *argv[])
 	//toggle wireframe
 	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
-	float sunAngle = 0.f,   sunScale = 1.f,              sunRotation = 6.28319/25.38f;
-	float earthAngle = 0.f, earthScale = 0.49069689823f, earthRotation = 6.28319/0.99726968f;
-	float moonAngle = 0.f,  moonScale = 0.38420392891f,  moonRotation = 6.28319/27.321582f;
+	float sunAngle = 0.f,   		 sunScale = 1.f,                  sunRotation = (2*PI)/25.38f,        sunTilt = 0.1265364f;
+	float earthAngle = 0.f, 		 earthScale = 0.49069689823f, 	  earthRotation = (2*PI)/0.99726968f,
+				earthOrbitAngle = 0.f, earthOrbit = (2*PI)/365.006351f, earthDistance = 8.17492546808f,     earthTilt = 0.40910518f;
+	float moonAngle = 0.f,       moonScale = 0.38420392891f,      moonRotation = (2*PI)/27.321582f,
+				moonOrbitAngle = 0.f,  moonOrbit = (2*PI)/27.32158f,    moonDistance = 5.5847822492f, 			moonTilt = 0.116588f,
+				moonInclination = 0.f;
 	vec3 sunLocation(0,0,0);
-	vec3 earthLocation(8.1749254681,0,0);
-	vec3 moonLocation(8.1749254681+5.5847822492,0,0);
-
-
- 	vec3 axis(0,1,0);
-	vec3 earthAxis(0.38171573832822,0.92427977101771,0);
-	vec3 sunAxis(0.12619896913583,0.99200494967971,0);
-	vec3 moonAxis(0.11632404804101,0.99321131480031,0);
+	vec3 earthLocation(earthDistance,0,0);
+	vec3 moonLocation(moonDistance,0,0);
+	vec3 earthAxis(0,1,0);
+	vec3 sunAxis(0,1,0);
+	vec3 moonAxis(0,1,0);
 
 	vec3 cameraLoc(0,0,4);
 	vec3 cameraDir(0,0,-1);
 	vec3 cameraUp(0,1,0);
 
   float aspectRatio = (float)width/ (float)height;
-	float zNear = .1f, zFar = 1000.f;
+	float zNear = .1f, zFar = 20000.f;
 	float fov = 1.0472f;
 
 	mat4 I(1);
@@ -448,7 +448,7 @@ int main(int argc, char *argv[])
 	glfwSetWindowPos(window, 3000, 400);
 
 	glfwSetTime(0.0);
-	double time = 0.0;
+	//double time = 0.0;
 	double timechange = 0.0;
 
 	// run an event-triggered main loop
@@ -456,14 +456,14 @@ int main(int argc, char *argv[])
 	{
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //=======
 
-		timechange = glfwGetTime() - time;
-		time = timechange;
+		timechange = glfwGetTime();
+		glfwSetTime(0.0);
 
 		//sun
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    sunAngle = timechange*sunRotation*speed;
+    sunAngle = sunAngle + timechange*sunRotation*speed;
 		glUseProgram(shader.program);
-		mat4 model = translate(I, sunLocation) * rotate(I, sunAngle, sunAxis) * scale(I, vec3(sunScale, sunScale, sunScale));
+		mat4 model = rotate(I, sunTilt, vec3(0,0,1)) * translate(I, sunLocation) * rotate(I, sunAngle, sunAxis) * scale(I, vec3(sunScale, sunScale, sunScale));
 		//Update camera pos, dir, phi, theta
 		updateCamera(cameraLoc, cameraDir, phi, theta, window, width, height);
 
@@ -477,24 +477,35 @@ int main(int argc, char *argv[])
 
 		//Earth
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-  	earthAngle = timechange*earthRotation*speed;
+  	earthAngle = earthAngle + timechange*earthRotation*speed;
+		earthOrbitAngle = timechange*(-earthOrbit)*speed;
+		earthLocation = vec3( ((earthLocation.x * cos(earthOrbitAngle)) - (earthLocation.z * sin(earthOrbitAngle))), earthLocation.y, ((earthLocation.z * cos(earthOrbitAngle)) + (earthLocation.x * sin(earthOrbitAngle))) );
 		glUseProgram(shader.program);
-		model = translate(I, earthLocation) * rotate(I, earthAngle, earthAxis) * scale(I, vec3( earthScale,  earthScale, earthScale));
+		model = translate(I, earthLocation) * rotate(I, earthTilt, vec3(0,0,1)) * rotate(I, earthAngle, earthAxis) * scale(I, vec3( earthScale,  earthScale, earthScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
 		RenderScene(&geometry, &shader);
 
 		//Moon
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		moonAngle = timechange*moonRotation*speed;
+		moonAngle = moonAngle + timechange*moonRotation*speed;
 		glUseProgram(shader.program);
-		model = translate(I, moonLocation) * rotate(I, moonAngle, moonAxis) * scale(I, vec3(moonScale, moonScale, moonScale));
+
+		moonLocation = vec3(moonDistance,0,0);
+		model = translate(I, moonLocation);
+		moonOrbitAngle = moonOrbitAngle + timechange*(-moonOrbit)*speed;
+		moonLocation = vec3( ((moonLocation.x * cos(moonOrbitAngle)) - (moonLocation.z * sin(moonOrbitAngle))), moonLocation.y + moonInclination, ((moonLocation.z * cos(moonOrbitAngle)) + (moonLocation.x * sin(moonOrbitAngle))) );
+		model = translate(I, moonLocation);
+		moonLocation = vec3(earthLocation.x + moonLocation.x, earthLocation.y, earthLocation.z + moonLocation.z);
+		moonInclination = (moonLocation.x - earthLocation.x)*moonDistance*0.08979719;
+		moonLocation = vec3(moonLocation.x, earthLocation.y + moonInclination, moonLocation.z);
+		model = translate(I, moonLocation) * rotate(I, moonTilt, vec3(0,0,1)) * rotate(I, moonAngle, moonAxis) * scale(I, vec3(moonScale, moonScale, moonScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
 		RenderScene(&geometry, &shader);
 
 		//stars
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		glUseProgram(shader.program);
-		model = translate(I, vec3(0,-6,0)); /* * scale(I, vec3(10.f, .1f, 10.f));*/
+		model = scale(I, vec3(10000, 10000, 10000)); /* * scale(I, vec3(10.f, .1f, 10.f));*/
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
 		RenderScene(&geometry, &shader);
 
