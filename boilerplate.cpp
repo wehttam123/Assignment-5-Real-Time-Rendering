@@ -21,6 +21,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 float speed = 1.0;
+int earthType = 1;
 
 // Specify that we want the OpenGL core profile before including GLFW headers
 #ifndef LAB_LINUX
@@ -110,14 +111,31 @@ struct MyTexture
 bool InitializeTexture(MyTexture* texture, const char* filename, GLuint target = GL_TEXTURE_2D)
 {
 	int numComponents;
-	stbi_set_flip_vertically_on_load(true);
 	unsigned char *data = stbi_load(filename, &texture->width, &texture->height, &numComponents, 0);
 	if (data != nullptr)
 	{
 		texture->target = target;
 		glGenTextures(1, &texture->textureID);
 		glBindTexture(texture->target, texture->textureID);
-		GLuint format = numComponents == 3 ? GL_RGB : GL_RGBA;
+		GLuint format = GL_RGB;
+		switch(numComponents)
+		{
+			case 4:
+				format = GL_RGBA;
+				break;
+			case 3:
+				format = GL_RGB;
+				break;
+			case 2:
+				format = GL_RG;
+				break;
+			case 1:
+				format = GL_RED;
+				break;
+			default:
+				cout << "Invalid Texture Format" << endl;
+				break;
+			};
 		glTexImage2D(texture->target, 0, format, texture->width, texture->height, 0, format, GL_UNSIGNED_BYTE, data);
 
 		// Note: Only wrapping modes supported for GL_TEXTURE_RECTANGLE when defining
@@ -163,22 +181,32 @@ struct MyGeometry
 // create buffers and fill with geometry data, returning true if successful
 bool InitializeGeometry(MyGeometry *geometry)
 {
-	float divisions = 48;
-	float angle = 360/divisions;
+	float divisions = 360;//48
+	float angle = 360/(divisions-1);
 	float radius = 1.0;
 	int vertexCount = 0;
+	float longitude = 0.f;
+	float latitude = 0.f;
 	vec3 point(0.f,radius,0.f);
 
 	GLfloat vertices[(int)(divisions*divisions)][3];
 	GLfloat colours[(int)(divisions*divisions)][3];
 	unsigned indices[(int)(6*divisions*divisions)];
+	float textureCoords[(int)(divisions*divisions)][2];
 
 	for(float u = 0; u < divisions; u++) {
 		for(float v = 0; v < divisions; v++) {
 			float theta = u*angle;
-			float phi = v*angle;
-			point = vec3(radius*cos(theta*PI/180)*sin(phi*PI/180),radius*sin(theta*PI/180)*sin(phi*PI/180),radius*cos(phi*PI/180));
+			float phi = v*angle*0.5;
+			point = vec3(radius*cos(theta*PI/180)*sin(phi*PI/180), radius*sin(theta*PI/180)*sin(phi*PI/180), radius*cos(phi*PI/180));
 			vertices[vertexCount][0] = point.x; vertices[vertexCount][1] = point.z; vertices[vertexCount][2] = point.y;
+
+			longitude = (theta)/(360);
+			latitude = (phi)/(180);
+
+			textureCoords[vertexCount][0] = longitude;
+			textureCoords[vertexCount][1] = latitude;
+
 			colours[vertexCount][0] = 0.0; colours[vertexCount][1] = 1-1/(float)vertexCount; colours[vertexCount][2] = 1-1/(float)vertexCount-.5;
 			vertexCount++;
 		}
@@ -212,6 +240,7 @@ bool InitializeGeometry(MyGeometry *geometry)
 	// input variables in the vertex shader
 	const GLuint VERTEX_INDEX = 0;
 	const GLuint COLOUR_INDEX = 1;
+	const GLuint TEXTURE_INDEX = 2;
 
 	// create an array buffer object for storing our vertices
 	glGenBuffers(1, &geometry->vertexBuffer);
@@ -222,6 +251,10 @@ bool InitializeGeometry(MyGeometry *geometry)
 	glGenBuffers(1, &geometry->colourBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, geometry->colourBuffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(colours), colours, GL_STATIC_DRAW);
+
+	glGenBuffers(1, &geometry->textureBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, geometry->textureBuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(textureCoords), textureCoords, GL_STATIC_DRAW);
 
 	// create a vertex array object encapsulating all our vertex attributes
 	glGenVertexArrays(1, &geometry->vertexArray);
@@ -235,6 +268,10 @@ bool InitializeGeometry(MyGeometry *geometry)
 	glBindBuffer(GL_ARRAY_BUFFER, geometry->vertexBuffer);
 	glVertexAttribPointer(VERTEX_INDEX, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	glEnableVertexAttribArray(VERTEX_INDEX);
+
+	glBindBuffer(GL_ARRAY_BUFFER, geometry->textureBuffer);
+	glVertexAttribPointer(TEXTURE_INDEX, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(TEXTURE_INDEX);
 
 	// assocaite the colour array with the vertex array object
 	glBindBuffer(GL_ARRAY_BUFFER, geometry->colourBuffer);
@@ -264,15 +301,18 @@ void DestroyGeometry(MyGeometry *geometry)
 // --------------------------------------------------------------------------
 // Rendering function that draws our scene to the frame buffer
 
-void RenderScene(MyGeometry *geometry, MyShader *shader)
+void RenderScene(MyGeometry *geometry, MyShader *shader, MyTexture* t)
 {
 	// bind our shader program and the vertex array object containing our
 	// scene geometry, then tell OpenGL to draw our geometry
+	glBindTexture(t->target, t->textureID);
 	glUseProgram(shader->program);
 	glBindVertexArray(geometry->vertexArray);
 	glDrawElements(GL_TRIANGLES,geometry->elementCount,GL_UNSIGNED_INT, 0);
+	//glDrawArrays(GL_TRIANGLES, 0, geometry->elementCount);
 
 	// reset state to default (no shader or geometry bound)
+	glBindTexture(t->target, 0);
 	glBindVertexArray(0);
 	glUseProgram(0);
 
@@ -296,59 +336,42 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
 		glfwSetWindowShouldClose(window, GL_TRUE);
 	} else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
-		speed = speed + 0.25;
+		speed = speed*2;
 	} else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
 		if (speed > 0.0)
-			speed = speed - 0.25;
+			speed = speed/2;
+	} else if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+		if (earthType > 2){
+			earthType = 1;
+		} else {
+			earthType++;
+		}
 	}
 }
 
-void updateCamera(vec3& cameraLoc, vec3& cameraDir, double& phi, double& theta, GLFWwindow* window, int width, int height)
+void updateCamera(vec3& cameraLoc, GLFWwindow* window)
 {
+		float theta = 1.0*PI/180;
+		float scale = 0.1;
 
-	//get cursor position
-	double x, y;
-	glfwGetCursorPos(window, &x, &y);
-	x = x / double(width) - .5;
-	y = y / double(height) - .5;
-
-	bool insideWindow = x > -.5 && x < .5 && y > -.5 && y < .5;
-	if(insideWindow)
-	{
-		phi -= x * 3.14159265 / 4.0;
-		theta += y * 3.14159265 / 4.0;
-
-		//dont let the camera point in "up" direction
-		if(theta < .1)
-			theta = .1;
-		else if(theta > 3.1)
-			theta = 3.1;
-
-		//calculate point on the sphere
-		vec3 pos(sin(phi)*sin(theta), cos(theta), cos(phi)*sin(theta));
-		vec3 right = normalize(cross(pos, vec3(0,1,0)));
-
-		//rotate and move the camera
-		//orientation
-		cameraDir = normalize(pos);
-
-		float movespeed = .5f;
 		//Side to side movement
 		if(glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-			cameraLoc -= right * movespeed;
+			cameraLoc = vec3((cameraLoc.x * cos(theta)) - (cameraLoc.z * sin(theta)),cameraLoc.y,(cameraLoc.z * cos(theta)) + (cameraLoc.x * sin(theta)));
 		if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-			cameraLoc += right * movespeed;
+			cameraLoc = vec3((cameraLoc.x * cos(-theta)) - (cameraLoc.z * sin(-theta)),cameraLoc.y,(cameraLoc.z * cos(-theta)) + (cameraLoc.x * sin(-theta)));
 
 		//Front and back movement
 		if(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-			cameraLoc += cameraDir * movespeed;
+			cameraLoc = vec3(cameraLoc.x,cameraLoc.y,cameraLoc.z+scale);
 		if(glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-			cameraLoc -= cameraDir * movespeed;
+			cameraLoc = vec3(cameraLoc.x,cameraLoc.y,cameraLoc.z-scale);
 
-		//reset cursor position to centre of the screen
-		if(x != 0 || y != 0)
-			glfwSetCursorPos(window, width/2, height/2);
-	}
+		//Up and Down movement
+		if(glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+			cameraLoc = vec3(cameraLoc.x,cameraLoc.y-theta,cameraLoc.z);
+		if(glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+			cameraLoc = vec3(cameraLoc.x,cameraLoc.y+theta,cameraLoc.z);
+
 }
 
 // ==========================================================================
@@ -406,7 +429,7 @@ int main(int argc, char *argv[])
 		cout << "Program failed to intialize geometry!" << endl;
 
 	//toggle wireframe
-	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+	//glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
 	float sunAngle = 0.f,   		 sunScale = 1.f,                  sunRotation = (2*PI)/25.38f,        sunTilt = 0.1265364f;
 	float earthAngle = 0.f, 		 earthScale = 0.49069689823f, 	  earthRotation = (2*PI)/0.99726968f,
@@ -414,6 +437,7 @@ int main(int argc, char *argv[])
 	float moonAngle = 0.f,       moonScale = 0.38420392891f,      moonRotation = (2*PI)/27.321582f,
 				moonOrbitAngle = 0.f,  moonOrbit = (2*PI)/27.32158f,    moonDistance = 5.5847822492f, 			moonTilt = 0.116588f,
 				moonInclination = 0.f;
+
 	vec3 sunLocation(0,0,0);
 	vec3 earthLocation(earthDistance,0,0);
 	vec3 moonLocation(moonDistance,0,0);
@@ -421,8 +445,7 @@ int main(int argc, char *argv[])
 	vec3 sunAxis(0,1,0);
 	vec3 moonAxis(0,1,0);
 
-	vec3 cameraLoc(0,0,4);
-	vec3 cameraDir(0,0,-1);
+	vec3 cameraLoc(0,0,20);
 	vec3 cameraUp(0,1,0);
 
   float aspectRatio = (float)width/ (float)height;
@@ -440,10 +463,17 @@ int main(int argc, char *argv[])
 	glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 	glEnable(GL_DEPTH_TEST);
 	glfwSetCursorPos(window, width/2, height/2); //centre the mouse
-	double phi = 3.14159265, theta = 3.14159265 / 2.0;
+	//double phi = 3.14159265, theta = 3.14159265 / 2.0;
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN); //disable with GLFW_CURSOR_NORMAL
 	//=============
 
+	MyTexture sunTexture, earthTexture, earthTextureNoclouds, earthTextureNight, moonTexture, starTexture;
+	InitializeTexture(&sunTexture, "Sun_Map.jpg");
+	InitializeTexture(&earthTexture, "Earth_Map.jpg");
+	InitializeTexture(&earthTextureNoclouds, "Earth_Map_Noclouds.jpg");
+	InitializeTexture(&earthTextureNight, "Earth_Map_Night.jpg");
+	InitializeTexture(&moonTexture, "Moon_Map.jpg");
+	InitializeTexture(&starTexture, "Star_Map.jpg");
 
 	glfwSetWindowPos(window, 3000, 400);
 
@@ -460,33 +490,43 @@ int main(int argc, char *argv[])
 		glfwSetTime(0.0);
 
 		//sun
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     sunAngle = sunAngle + timechange*sunRotation*speed;
 		glUseProgram(shader.program);
 		mat4 model = rotate(I, sunTilt, vec3(0,0,1)) * translate(I, sunLocation) * rotate(I, sunAngle, sunAxis) * scale(I, vec3(sunScale, sunScale, sunScale));
-		//Update camera pos, dir, phi, theta
-		updateCamera(cameraLoc, cameraDir, phi, theta, window, width, height);
+		//Update camera pos
+		updateCamera(cameraLoc, window);
 
-		mat4 view = lookAt(cameraLoc, cameraLoc+cameraDir, cameraUp);
+		mat4 view = lookAt(cameraLoc, vec3(0,0,0), cameraUp);
 		mat4 proj = perspective(fov, aspectRatio, zNear, zFar);
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
 		glUniformMatrix4fv(viewUniform, 1, false, value_ptr(view));
 		glUniformMatrix4fv(projUniform, 1, false, value_ptr(proj));
 		// call function to draw our scene
-		RenderScene(&geometry, &shader);
+		RenderScene(&geometry, &shader , &sunTexture);
 
 		//Earth
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   	earthAngle = earthAngle + timechange*earthRotation*speed;
 		earthOrbitAngle = timechange*(-earthOrbit)*speed;
 		earthLocation = vec3( ((earthLocation.x * cos(earthOrbitAngle)) - (earthLocation.z * sin(earthOrbitAngle))), earthLocation.y, ((earthLocation.z * cos(earthOrbitAngle)) + (earthLocation.x * sin(earthOrbitAngle))) );
 		glUseProgram(shader.program);
 		model = translate(I, earthLocation) * rotate(I, earthTilt, vec3(0,0,1)) * rotate(I, earthAngle, earthAxis) * scale(I, vec3( earthScale,  earthScale, earthScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
-		RenderScene(&geometry, &shader);
+		switch (earthType) {
+			case 1:
+			RenderScene(&geometry, &shader , &earthTexture);
+			break;
+			case 2:
+			RenderScene(&geometry, &shader , &earthTextureNoclouds);
+			break;
+			case 3:
+			RenderScene(&geometry, &shader , &earthTextureNight);
+			break;
+		}
 
 		//Moon
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		moonAngle = moonAngle + timechange*moonRotation*speed;
 		glUseProgram(shader.program);
 
@@ -496,18 +536,18 @@ int main(int argc, char *argv[])
 		moonLocation = vec3( ((moonLocation.x * cos(moonOrbitAngle)) - (moonLocation.z * sin(moonOrbitAngle))), moonLocation.y + moonInclination, ((moonLocation.z * cos(moonOrbitAngle)) + (moonLocation.x * sin(moonOrbitAngle))) );
 		model = translate(I, moonLocation);
 		moonLocation = vec3(earthLocation.x + moonLocation.x, earthLocation.y, earthLocation.z + moonLocation.z);
-		moonInclination = (moonLocation.x - earthLocation.x)*moonDistance*0.08979719;
+		moonInclination = (moonLocation.x - earthLocation.x) * moonDistance * 0.08979719;
 		moonLocation = vec3(moonLocation.x, earthLocation.y + moonInclination, moonLocation.z);
 		model = translate(I, moonLocation) * rotate(I, moonTilt, vec3(0,0,1)) * rotate(I, moonAngle, moonAxis) * scale(I, vec3(moonScale, moonScale, moonScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
-		RenderScene(&geometry, &shader);
+		RenderScene(&geometry, &shader , &moonTexture);
 
 		//stars
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		glUseProgram(shader.program);
-		model = scale(I, vec3(10000, 10000, 10000)); /* * scale(I, vec3(10.f, .1f, 10.f));*/
+		model = scale(I, vec3(10000, 10000, 10000));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
-		RenderScene(&geometry, &shader);
+		RenderScene(&geometry, &shader , &starTexture);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

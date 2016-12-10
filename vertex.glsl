@@ -10,9 +10,11 @@
 // InitializeGeometry() function of the main program
 layout(location = 0) in vec3 VertexPosition; //===
 layout(location = 1) in vec3 VertexColour;
+layout(location = 2) in vec2 VertexTextureCoords;
 
 // output to be interpolated between vertices and passed to the fragment stage
 out vec3 Colour;
+out vec2 TextureCoords;
 
 // uniforms
 uniform mat4 model;
@@ -26,4 +28,5 @@ void main()
 
     // assign output colour to be interpolated
     Colour = VertexColour;
+    TextureCoords = VertexTextureCoords;
 }
