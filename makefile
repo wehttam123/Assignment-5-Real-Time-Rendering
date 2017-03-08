@@ -20,7 +20,7 @@ INCLUDES=-Imiddleware/stb -Imiddleware/glad/include -Imiddleware/glm-0.9.8.2
 LFLAGS=
 
 # define any libraries to link into executable
-LIBS=`pkg-config --static --libs glfw3`
+LIBS=`pkg-config --static --libs glfw3` -lGL
 
 # typing 'make' will invoke the first target entry in the file
 # you can name this target entry anything, but "default" or "all"

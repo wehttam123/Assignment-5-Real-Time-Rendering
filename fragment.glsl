@@ -9,18 +9,27 @@
 // interpolated colour received from vertex stage
 in vec3 Colour;
 in vec2 TextureCoords;
+in vec3 N;
+in vec3 L;
+in vec3 V;
 
 // first output is mapped to the framebuffer's colour index by default
 out vec4 FragmentColour;
 
 uniform sampler2D tex;
+uniform vec2 lighting;
 
 void main(void)
 {
-  const float amb = 1.0f;
-  float dif = 0.0f;//clamp(N*L,0,1);
-  float spec = 0.0f;//do this
+  float amb = 0.75f;
+  float dif = clamp(dot(N,L),0.0f,1.0f);
+  float spec = 0.5f;
+  float P = 1;
+  vec3 H = (V + L)/length(V + L);
 
-    // write colour output without modification
-    FragmentColour = texture(tex, TextureCoords) * (amb + dif + spec); //only it earth or moon// use uniforms to do this
+  if (lighting.x == 0){
+    FragmentColour = (texture(tex, TextureCoords) * amb) + (texture(tex, TextureCoords) * 0.01 * max(0,dot(N,L))) + (spec * 0.01 * pow(max(0,dot(N,H)),P));
+  } else {
+    FragmentColour = texture(tex, TextureCoords);
+  }
 }

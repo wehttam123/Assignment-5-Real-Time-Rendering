@@ -7,6 +7,9 @@
 //  - Camilla Berglund's example (http://www.glfw.org/docs/latest/quick.html)
 //
 // Author:  Sonny Chan, University of Calgary
+//
+// Edited: Matthew Hylton (10114326) December 2016
+//
 // Date:    December 2015
 // ==========================================================================
 
@@ -22,6 +25,14 @@
 
 float speed = 1.0;
 int earthType = 1;
+bool initial = true;
+bool mousePress = false;
+double zoom = 0;
+static double xpos, ypos;
+static double oldxpos, oldypos;
+static float translationx;
+static float translationy;
+int planetView = 1;
 
 // Specify that we want the OpenGL core profile before including GLFW headers
 #ifndef LAB_LINUX
@@ -181,7 +192,7 @@ struct MyGeometry
 // create buffers and fill with geometry data, returning true if successful
 bool InitializeGeometry(MyGeometry *geometry)
 {
-	float divisions = 360;//48
+	float divisions = 360;
 	float angle = 360/(divisions-1);
 	float radius = 1.0;
 	int vertexCount = 0;
@@ -335,42 +346,74 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
 		glfwSetWindowShouldClose(window, GL_TRUE);
+
+		//animation speed
 	} else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
-		speed = speed*2;
+		if (speed < 256.0){speed = speed*2;}
 	} else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
-		if (speed > 0.0)
-			speed = speed/2;
+		if (speed > 0.00048828125){speed = speed/2;}
+
+		//earth texture
 	} else if (key == GLFW_KEY_T && action == GLFW_PRESS) {
 		if (earthType > 2){
 			earthType = 1;
 		} else {
 			earthType++;
 		}
+
+		//planet selection
+	} else if (key == GLFW_KEY_V && action == GLFW_PRESS) {
+		if (planetView > 9){
+			planetView = 1;
+		} else {
+			planetView++;
+		}
 	}
 }
 
-void updateCamera(vec3& cameraLoc, GLFWwindow* window)
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+        mousePress = true;
+		else
+				mousePress = false;
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	zoom = yoffset;
+}
+
+void updateCamera(vec3& cameraLoc, GLFWwindow* window, float width, float height)
 {
 		float theta = 1.0*PI/180;
-		float scale = 0.1;
 
-		//Side to side movement
-		if(glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+
+		if (initial)
 			cameraLoc = vec3((cameraLoc.x * cos(theta)) - (cameraLoc.z * sin(theta)),cameraLoc.y,(cameraLoc.z * cos(theta)) + (cameraLoc.x * sin(theta)));
-		if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-			cameraLoc = vec3((cameraLoc.x * cos(-theta)) - (cameraLoc.z * sin(-theta)),cameraLoc.y,(cameraLoc.z * cos(-theta)) + (cameraLoc.x * sin(-theta)));
 
-		//Front and back movement
-		if(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-			cameraLoc = vec3(cameraLoc.x,cameraLoc.y,cameraLoc.z+scale);
-		if(glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-			cameraLoc = vec3(cameraLoc.x,cameraLoc.y,cameraLoc.z-scale);
+		if (mousePress){
+			translationx = 100*((xpos - oldxpos)/height);
+			translationy = 100*((-(ypos - oldypos))/width);
 
-		//Up and Down movement
-		if(glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-			cameraLoc = vec3(cameraLoc.x,cameraLoc.y-theta,cameraLoc.z);
-		if(glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-			cameraLoc = vec3(cameraLoc.x,cameraLoc.y+theta,cameraLoc.z);
+		cameraLoc = vec3((cameraLoc.x * cos(translationx*theta)) - (cameraLoc.z * sin(translationx*theta)),cameraLoc.y+translationy,(cameraLoc.z * cos(translationx*theta)) + (cameraLoc.x * sin(translationx*theta)));
+		}
+
+		//xyz to spherical
+		float r = sqrt(pow(cameraLoc.x,2) + pow(cameraLoc.y,2) + pow(cameraLoc.z,2));
+		float t = atan(cameraLoc.y/cameraLoc.x);
+		float p = atan(sqrt(pow(cameraLoc.x,2) + pow(cameraLoc.y,2))/cameraLoc.z);
+
+
+				if(zoom == 1){
+					if(r>2.0){r = r/1.05;}
+					cameraLoc = vec3(r*sin(p)*cos(t),r*sin(p)*sin(t),r*cos(p));
+				}
+				if(zoom == -1){
+					if(r<500.0){r = r*1.05;}
+					cameraLoc = vec3(r*sin(p)*cos(t),r*sin(p)*sin(t),r*cos(p));
+				}
+				zoom = 0;
 
 }
 
@@ -401,6 +444,8 @@ int main(int argc, char *argv[])
 	}
 
 	// set keyboard callback function and make our context current (active)
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	glfwSetScrollCallback(window, scroll_callback);
 	glfwSetKeyCallback(window, KeyCallback);
 	glfwMakeContextCurrent(window);
 
@@ -428,25 +473,61 @@ int main(int argc, char *argv[])
 	if (!InitializeGeometry(&geometry))
 		cout << "Program failed to intialize geometry!" << endl;
 
-	//toggle wireframe
-	//glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-
 	float sunAngle = 0.f,   		 sunScale = 1.f,                  sunRotation = (2*PI)/25.38f,        sunTilt = 0.1265364f;
-	float earthAngle = 0.f, 		 earthScale = 0.49069689823f, 	  earthRotation = (2*PI)/0.99726968f,
-				earthOrbitAngle = 0.f, earthOrbit = (2*PI)/365.006351f, earthDistance = 8.17492546808f,     earthTilt = 0.40910518f;
 	float moonAngle = 0.f,       moonScale = 0.38420392891f,      moonRotation = (2*PI)/27.321582f,
 				moonOrbitAngle = 0.f,  moonOrbit = (2*PI)/27.32158f,    moonDistance = 5.5847822492f, 			moonTilt = 0.116588f,
 				moonInclination = 0.f;
 
+	float mercuryAngle = 0.f, 		 mercuryScale = 0.40728494381f, 	  mercuryRotation = (2*PI)/58.646225f,
+				mercuryOrbitAngle = 0.f, mercuryOrbit = (2*PI)/87.9090455f, mercuryDistance = 7.762747378f,     mercuryTilt = 0.0f,
+				mercuryInclination = 0.f;
+	float venusAngle = 0.f, 		 venusScale = 0.48526263608f, 	  venusRotation = (2*PI)/-243.0187f,
+				venusOrbitAngle = 0.f, venusOrbit = (2*PI)/224.5469999f, venusDistance = 8.034263103f+(2*mercuryScale),     venusTilt = 3.0944688f,
+				venusInclination = 0.f;
+	float earthAngle = 0.f, 		 earthScale = 0.49069689823f, 	  earthRotation = (2*PI)/0.99726968f,
+				earthOrbitAngle = 0.f, earthOrbit = (2*PI)/365.006351f, earthDistance = 8.17492546808f+(2*mercuryScale)+(2*venusScale),     earthTilt = 0.40910518f;
+	float marsAngle = 0.f, 		 marsScale = 0.43261694842f, 	  marsRotation = (2*PI)/1.02595675f,
+				marsOrbitAngle = 0.f, marsOrbit = (2*PI)/686.509374f, marsDistance = 8.357814142f+(2*mercuryScale)+(2*venusScale)+(2*earthScale),     marsTilt = 0.43964844f,
+				marsInclination = 0.f;
+	float jupiterAngle = 0.f, 		 jupiterScale = 1.01178971563f, 	  jupiterRotation = (2*PI)/0.41354f,
+				jupiterOrbitAngle = 0.f, jupiterOrbit = (2*PI)/4329.854475f, jupiterDistance = 8.891209528f+(2*mercuryScale)+(2*venusScale)+(2*earthScale)+(2*marsScale),     jupiterTilt = 0.05445427f,
+				jupiterInclination = 0.f;
+	float saturnAngle = 0.f, 		 saturnScale = 0.94115108629f, 	  saturnRotation = (2*PI)/0.44401f,
+				saturnOrbitAngle = 0.f, saturnOrbit = (2*PI)/10748.33677f, saturnDistance = 9.154340393f+(2*mercuryScale)+(2*venusScale)+(2*earthScale)+(2*marsScale)+(2*jupiterScale),     saturnTilt = 0.46652651f,
+				saturnInclination = 0.f;
+	float uranusAngle = 0.f, 		 uranusScale = 0.69681792321f, 	  uranusRotation = (2*PI)/-0.71833f,
+				uranusOrbitAngle = 0.f, uranusOrbit = (2*PI)/30666.14879f, uranusDistance = 9.458028987f+(2*mercuryScale)+(2*venusScale)+(2*earthScale)+(2*marsScale)+(2*jupiterScale)+(2*saturnScale),     uranusTilt = 1.7079792f,
+				uranusInclination = 0.f;
+	float neptuneAngle = 0.f, 		 neptuneScale = 0.69025161734f, 	  neptuneRotation = (2*PI)/0.67125f,
+				neptuneOrbitAngle = 0.f, neptuneOrbit = (2*PI)/60148.8318f, neptuneDistance = 9.653043869f+(2*mercuryScale)+(2*venusScale)+(2*earthScale)+(2*marsScale)+(2*jupiterScale)+(2*saturnScale)+(2*uranusScale),     neptuneTilt = 0.51626839f,
+				neptuneInclination = 0.f;
+
+
 	vec3 sunLocation(0,0,0);
 	vec3 earthLocation(earthDistance,0,0);
 	vec3 moonLocation(moonDistance,0,0);
+	vec3 mercuryLocation(mercuryDistance,0,0);
+	vec3 venusLocation(venusDistance,0,0);
+	vec3 marsLocation(marsDistance,0,0);
+	vec3 jupiterLocation(jupiterDistance,0,0);
+	vec3 saturnLocation(saturnDistance,0,0);
+	vec3 uranusLocation(uranusDistance,0,0);
+	vec3 neptuneLocation(neptuneDistance,0,0);
 	vec3 earthAxis(0,1,0);
 	vec3 sunAxis(0,1,0);
 	vec3 moonAxis(0,1,0);
+	vec3 mercuryAxis(0,1,0);
+	vec3 venusAxis(0,1,0);
+	vec3 marsAxis(0,1,0);
+	vec3 jupiterAxis(0,1,0);
+	vec3 saturnAxis(0,1,0);
+	vec3 uranusAxis(0,1,0);
+	vec3 neptuneAxis(0,1,0);
 
 	vec3 cameraLoc(0,0,20);
 	vec3 cameraUp(0,1,0);
+	updateCamera(cameraLoc, window, width, height);
+	initial = false;
 
   float aspectRatio = (float)width/ (float)height;
 	float zNear = .1f, zFar = 20000.f;
@@ -463,56 +544,108 @@ int main(int argc, char *argv[])
 	glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 	glEnable(GL_DEPTH_TEST);
 	glfwSetCursorPos(window, width/2, height/2); //centre the mouse
-	//double phi = 3.14159265, theta = 3.14159265 / 2.0;
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN); //disable with GLFW_CURSOR_NORMAL
 	//=============
 
-	MyTexture sunTexture, earthTexture, earthTextureNoclouds, earthTextureNight, moonTexture, starTexture;
+	MyTexture sunTexture, earthTexture, earthTextureNoclouds, earthTextureNight, moonTexture, starTexture, mercuryTexture,venusTexture,marsTexture,jupiterTexture,saturnTexture,uranusTexture,neptuneTexture;
 	InitializeTexture(&sunTexture, "Sun_Map.jpg");
 	InitializeTexture(&earthTexture, "Earth_Map.jpg");
 	InitializeTexture(&earthTextureNoclouds, "Earth_Map_Noclouds.jpg");
 	InitializeTexture(&earthTextureNight, "Earth_Map_Night.jpg");
 	InitializeTexture(&moonTexture, "Moon_Map.jpg");
 	InitializeTexture(&starTexture, "Star_Map.jpg");
+	InitializeTexture(&mercuryTexture, "mercury_Map.jpg");
+	InitializeTexture(&venusTexture, "venus_Map.jpg");
+	InitializeTexture(&marsTexture, "mars_Map.jpg");
+	InitializeTexture(&jupiterTexture, "jupiter_Map.jpg");
+	InitializeTexture(&saturnTexture, "saturn_Map.jpg");
+	InitializeTexture(&uranusTexture, "uranus_Map.jpg");
+	InitializeTexture(&neptuneTexture, "neptune_Map.jpg");
 
 	glfwSetWindowPos(window, 3000, 400);
 
 	glfwSetTime(0.0);
-	//double time = 0.0;
 	double timechange = 0.0;
 
 	// run an event-triggered main loop
 	while (!glfwWindowShouldClose(window))
 	{
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //=======
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		timechange = glfwGetTime();
 		glfwSetTime(0.0);
 
 		//sun
-		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     sunAngle = sunAngle + timechange*sunRotation*speed;
 		glUseProgram(shader.program);
 		mat4 model = rotate(I, sunTilt, vec3(0,0,1)) * translate(I, sunLocation) * rotate(I, sunAngle, sunAxis) * scale(I, vec3(sunScale, sunScale, sunScale));
 		//Update camera pos
-		updateCamera(cameraLoc, window);
+		glfwGetCursorPos(window, &xpos, &ypos);
+		updateCamera(cameraLoc, window, width, height);
+		GLint loc3 = glGetUniformLocation(shader.program, "cam");
+		glUseProgram(shader.program);
+		glUniform3f(loc3, cameraLoc.x, cameraLoc.y, cameraLoc.z);
+		oldxpos = xpos;
+		oldypos = ypos;
 
-		mat4 view = lookAt(cameraLoc, vec3(0,0,0), cameraUp);
+		mat4 view;
+		switch (planetView) {
+			case 1:
+			view = lookAt(cameraLoc, vec3(0,0,0), cameraUp);
+			break;
+			case 2:
+			view = lookAt(cameraLoc, earthLocation, cameraUp);
+			break;
+			case 3:
+			view = lookAt(cameraLoc, moonLocation, cameraUp);
+			break;
+			case 4:
+			view = lookAt(cameraLoc, mercuryLocation, cameraUp);
+			break;
+			case 5:
+			view = lookAt(cameraLoc, venusLocation, cameraUp);
+			break;
+			case 6:
+			view = lookAt(cameraLoc, marsLocation, cameraUp);
+			break;
+			case 7:
+			view = lookAt(cameraLoc, jupiterLocation, cameraUp);
+			break;
+			case 8:
+			view = lookAt(cameraLoc, saturnLocation, cameraUp);
+			break;
+			case 9:
+			view = lookAt(cameraLoc, uranusLocation, cameraUp);
+			break;
+			case 10:
+			view = lookAt(cameraLoc, neptuneLocation, cameraUp);
+			break;
+		}
+
 		mat4 proj = perspective(fov, aspectRatio, zNear, zFar);
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
 		glUniformMatrix4fv(viewUniform, 1, false, value_ptr(view));
 		glUniformMatrix4fv(projUniform, 1, false, value_ptr(proj));
 		// call function to draw our scene
+		GLint loc = glGetUniformLocation(shader.program, "lighting");
+		GLint loc2 = glGetUniformLocation(shader.program, "location");
+		glUseProgram(shader.program);
+		glUniform2f(loc, 1.0f, 1.0f);
 		RenderScene(&geometry, &shader , &sunTexture);
 
 		//Earth
-		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   	earthAngle = earthAngle + timechange*earthRotation*speed;
 		earthOrbitAngle = timechange*(-earthOrbit)*speed;
 		earthLocation = vec3( ((earthLocation.x * cos(earthOrbitAngle)) - (earthLocation.z * sin(earthOrbitAngle))), earthLocation.y, ((earthLocation.z * cos(earthOrbitAngle)) + (earthLocation.x * sin(earthOrbitAngle))) );
 		glUseProgram(shader.program);
 		model = translate(I, earthLocation) * rotate(I, earthTilt, vec3(0,0,1)) * rotate(I, earthAngle, earthAxis) * scale(I, vec3( earthScale,  earthScale, earthScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+
+		//GLint loc = glGetUniformLocation(shader.program, "lighting");
+		glUseProgram(shader.program);
+		glUniform2f(loc, 0.0f, 1.0f);
+		glUniform3f(loc2, earthLocation.x, earthLocation.y, earthLocation.z);
+
 		switch (earthType) {
 			case 1:
 			RenderScene(&geometry, &shader , &earthTexture);
@@ -526,7 +659,6 @@ int main(int argc, char *argv[])
 		}
 
 		//Moon
-		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		moonAngle = moonAngle + timechange*moonRotation*speed;
 		glUseProgram(shader.program);
 
@@ -540,13 +672,93 @@ int main(int argc, char *argv[])
 		moonLocation = vec3(moonLocation.x, earthLocation.y + moonInclination, moonLocation.z);
 		model = translate(I, moonLocation) * rotate(I, moonTilt, vec3(0,0,1)) * rotate(I, moonAngle, moonAxis) * scale(I, vec3(moonScale, moonScale, moonScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, moonLocation.x, moonLocation.y, moonLocation.z);
 		RenderScene(&geometry, &shader , &moonTexture);
 
-		//stars
-		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		//Mercury
+		mercuryAngle = mercuryAngle + timechange*mercuryRotation*speed;
+		mercuryOrbitAngle = timechange*(-mercuryOrbit)*speed;
+		mercuryInclination = mercuryLocation.x * 0.122173;
+		mercuryLocation = vec3( ((mercuryLocation.x * cos(mercuryOrbitAngle)) - (mercuryLocation.z * sin(mercuryOrbitAngle))), mercuryInclination, ((mercuryLocation.z * cos(mercuryOrbitAngle)) + (mercuryLocation.x * sin(mercuryOrbitAngle))) );
 		glUseProgram(shader.program);
-		model = scale(I, vec3(10000, 10000, 10000));
+		model = translate(I, mercuryLocation) * rotate(I, mercuryTilt, vec3(0,0,1)) * rotate(I, mercuryAngle, mercuryAxis) * scale(I, vec3( mercuryScale,  mercuryScale, mercuryScale));
 		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, mercuryLocation.x, mercuryLocation.y, mercuryLocation.z);
+		RenderScene(&geometry, &shader , &mercuryTexture);
+
+		//Venus
+		venusAngle = venusAngle + timechange*venusRotation*speed;
+		venusOrbitAngle = timechange*(-venusOrbit)*speed;
+		venusInclination = venusLocation.x * 0.05916666;
+		venusLocation = vec3( ((venusLocation.x * cos(venusOrbitAngle)) - (venusLocation.z * sin(venusOrbitAngle))), venusInclination, ((venusLocation.z * cos(venusOrbitAngle)) + (venusLocation.x * sin(venusOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, venusLocation) * rotate(I, venusTilt, vec3(0,0,1)) * rotate(I, venusAngle, venusAxis) * scale(I, vec3( venusScale,  venusScale, venusScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, venusLocation.x, venusLocation.y, venusLocation.z);
+		RenderScene(&geometry, &shader , &venusTexture);
+
+		//mars
+		marsAngle = marsAngle + timechange*marsRotation*speed;
+		marsOrbitAngle = timechange*(-marsOrbit)*speed;
+		marsInclination = marsLocation.x * 0.03228859;
+		marsLocation = vec3( ((marsLocation.x * cos(marsOrbitAngle)) - (marsLocation.z * sin(marsOrbitAngle))), marsInclination, ((marsLocation.z * cos(marsOrbitAngle)) + (marsLocation.x * sin(marsOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, marsLocation) * rotate(I, marsTilt, vec3(0,0,1)) * rotate(I, marsAngle, marsAxis) * scale(I, vec3( marsScale,  marsScale, marsScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, marsLocation.x, marsLocation.y, marsLocation.z);
+		RenderScene(&geometry, &shader , &marsTexture);
+
+		//jupiter
+		jupiterAngle = jupiterAngle + timechange*jupiterRotation*speed;
+		jupiterOrbitAngle = timechange*(-jupiterOrbit)*speed;
+		jupiterInclination = jupiterLocation.x * 0.02286381;
+		jupiterLocation = vec3( ((jupiterLocation.x * cos(jupiterOrbitAngle)) - (jupiterLocation.z * sin(jupiterOrbitAngle))), jupiterInclination, ((jupiterLocation.z * cos(jupiterOrbitAngle)) + (jupiterLocation.x * sin(jupiterOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, jupiterLocation) * rotate(I, jupiterTilt, vec3(0,0,1)) * rotate(I, jupiterAngle, jupiterAxis) * scale(I, vec3( jupiterScale,  jupiterScale, jupiterScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, jupiterLocation.x, jupiterLocation.y, jupiterLocation.z);
+		RenderScene(&geometry, &shader , &jupiterTexture);
+
+		//saturn
+		saturnAngle = saturnAngle + timechange*saturnRotation*speed;
+		saturnOrbitAngle = timechange*(-saturnOrbit)*speed;
+		saturnInclination = saturnLocation.x * 0.04328417;
+		saturnLocation = vec3( ((saturnLocation.x * cos(saturnOrbitAngle)) - (saturnLocation.z * sin(saturnOrbitAngle))), saturnInclination, ((saturnLocation.z * cos(saturnOrbitAngle)) + (saturnLocation.x * sin(saturnOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, saturnLocation) * rotate(I, saturnTilt, vec3(0,0,1)) * rotate(I, saturnAngle, saturnAxis) * scale(I, vec3( saturnScale,  saturnScale, saturnScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, saturnLocation.x, saturnLocation.y, saturnLocation.z);
+		RenderScene(&geometry, &shader , &saturnTexture);
+
+		//uranus
+		uranusAngle = uranusAngle + timechange*uranusRotation*speed;
+		uranusOrbitAngle = timechange*(-uranusOrbit)*speed;
+		uranusInclination = uranusLocation.x * 0.0132645;
+		uranusLocation = vec3( ((uranusLocation.x * cos(uranusOrbitAngle)) - (uranusLocation.z * sin(uranusOrbitAngle))), uranusInclination, ((uranusLocation.z * cos(uranusOrbitAngle)) + (uranusLocation.x * sin(uranusOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, uranusLocation) * rotate(I, uranusTilt, vec3(0,0,1)) * rotate(I, uranusAngle, uranusAxis) * scale(I, vec3( uranusScale,  uranusScale, uranusScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, uranusLocation.x, uranusLocation.y, uranusLocation.z);
+		RenderScene(&geometry, &shader , &uranusTexture);
+
+		//neptune
+		neptuneAngle = neptuneAngle + timechange*neptuneRotation*speed;
+		neptuneOrbitAngle = timechange*(-neptuneOrbit)*speed;
+		neptuneInclination = neptuneLocation.x * 0.03089233;
+		neptuneLocation = vec3( ((neptuneLocation.x * cos(neptuneOrbitAngle)) - (neptuneLocation.z * sin(neptuneOrbitAngle))), neptuneInclination, ((neptuneLocation.z * cos(neptuneOrbitAngle)) + (neptuneLocation.x * sin(neptuneOrbitAngle))) );
+		glUseProgram(shader.program);
+		model = translate(I, neptuneLocation) * rotate(I, neptuneTilt, vec3(0,0,1)) * rotate(I, neptuneAngle, neptuneAxis) * scale(I, vec3( neptuneScale,  neptuneScale, neptuneScale));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+		glUniform3f(loc2, neptuneLocation.x, neptuneLocation.y, neptuneLocation.z);
+		RenderScene(&geometry, &shader , &neptuneTexture);
+
+		//stars
+		glUseProgram(shader.program);
+		model = scale(I, vec3(1000, 1000, 1000));
+		glUniformMatrix4fv(modelUniform, 1, false, value_ptr(model));
+
+		glUseProgram(shader.program);
+		glUniform2f(loc, 1.0f, 1.0f);
 		RenderScene(&geometry, &shader , &starTexture);
 
 		glfwSwapBuffers(window);
@@ -554,8 +766,8 @@ int main(int argc, char *argv[])
 	}
 
 	// clean up allocated resources before exit
-	DestroyGeometry(&geometry);
 	DestroyShaders(&shader);
+	DestroyGeometry(&geometry);
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
